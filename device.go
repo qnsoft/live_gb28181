@@ -9,9 +9,7 @@ import (
 	"github.com/qnsoft/live_gb28181/sip"
 	"github.com/qnsoft/live_gb28181/transaction"
 	"github.com/qnsoft/live_gb28181/utils"
-	"github.com/qnsoft/live_sdk"
-	// . "github.com/qnsoft/live_utils"
-	// . "github.com/logrusorgru/aurora"
+	engine "github.com/qnsoft/live_sdk"
 )
 
 const TIME_LAYOUT = "2006-01-02T15:04:05"
