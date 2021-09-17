@@ -215,7 +215,7 @@ func (channel *Channel) Invite(start, end string) (code int) {
 			}
 		}
 		publisher := &Publisher{
-			Stream: &engine.Stream{
+			Stream: &live_sdk.Stream{
 				StreamPath:    streamPath,
 				AutoUnPublish: config.AutoUnPublish,
 			},

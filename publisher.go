@@ -8,7 +8,7 @@ import (
 )
 
 type Publisher struct {
-	*engine.Stream
+	*live_sdk.Stream
 	parser    utils.DecPSPackage
 	pushVideo func(uint32, uint32, []byte)
 	pushAudio func(uint32, []byte)
@@ -24,7 +24,7 @@ func (p *Publisher) PushAudio(ts uint32, payload []byte) {
 func (p *Publisher) Publish() (result bool) {
 	if result = p.Stream.Publish(); result {
 		p.pushVideo = func(ts uint32, cts uint32, payload []byte) {
-			var vt *engine.VideoTrack
+			var vt *live_sdk.VideoTrack
 			switch p.parser.VideoStreamType {
 			case utils.StreamTypeH264:
 				vt = p.Stream.NewVideoTrack(7)
