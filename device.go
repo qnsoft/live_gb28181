@@ -9,7 +9,7 @@ import (
 	"github.com/qnsoft/live_gb28181/sip"
 	"github.com/qnsoft/live_gb28181/transaction"
 	"github.com/qnsoft/live_gb28181/utils"
-	engine "github.com/qnsoft/live_sdk"
+	live_sdk "github.com/qnsoft/live_sdk"
 )
 
 const TIME_LAYOUT = "2006-01-02T15:04:05"
@@ -104,7 +104,7 @@ func (d *Device) UpdateChannels(list []*Channel) {
 				device: d,
 			}
 		}
-		if s := engine.FindStream("sub/" + c.DeviceID); s != nil {
+		if s := live_sdk.FindStream("sub/" + c.DeviceID); s != nil {
 			c.LiveSubSP = s.StreamPath
 		} else {
 			c.LiveSubSP = ""
