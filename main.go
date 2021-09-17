@@ -72,7 +72,7 @@ var config = struct {
 
 func init() {
 	engine.InstallPlugin(&engine.PluginConfig{
-		Name:   "GB28181",
+		Name:   "LiveGB28181",
 		Config: &config,
 		Run:    run,
 	})
