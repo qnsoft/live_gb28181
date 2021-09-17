@@ -1,4 +1,4 @@
-package gb28181
+package live_gb28181
 
 import (
 	"github.com/pion/rtp"
