@@ -84,7 +84,7 @@ func run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	Print(Green("server gb28181 start at"), BrightBlue(config.ListenAddr))
+	Print(Green("server LiveGb28181 start at"), BrightBlue(config.ListenAddr))
 	for _, id := range config.Ignore {
 		Ignores[id] = struct{}{}
 	}
