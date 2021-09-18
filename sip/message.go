@@ -286,7 +286,7 @@ func Decode(data []byte) (msg *Message, err error) {
 		if len(v) == 0 {
 			continue
 		}
-		fmt.Println("这个k到底是什么？", k)
+		//fmt.Println("这个k到底是什么？", k)
 		switch k {
 		case "via":
 			//Via: SIP/2.0/UDP 192.168.1.64:5060;rport;branch=z9hG4bK385701375
