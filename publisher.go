@@ -4,7 +4,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/qnsoft/live_gb28181/utils"
 	"github.com/qnsoft/live_sdk"
-	. "github.com/qnsoft/live_utils"
+	"github.com/qnsoft/live_utils"
 )
 
 type Publisher struct {
@@ -70,7 +70,7 @@ func (p *Publisher) PushPS(rtp *rtp.Packet) {
 	}
 	p.lastSeq = rtp.SequenceNumber
 	p.Update()
-	if len(ps) >= 4 && BigEndian.Uint32(ps) == utils.StartCodePS {
+	if len(ps) >= 4 && live_utils.BigEndian.Uint32(ps) == utils.StartCodePS {
 		if p.parser.Len() > 0 {
 			p.parser.Uint32()
 			p.parser.Read(rtp.Timestamp, p)
