@@ -125,7 +125,7 @@ func (d *Device) CreateMessage(Method sip.Method) (requestMsg *sip.Message) {
 	requestMsg = &sip.Message{
 		Mode:        sip.SIP_MESSAGE_REQUEST,
 		MaxForwards: 70,
-		UserAgent:   "Monibuca",
+		UserAgent:   "LiveSdk",
 		StartLine: &sip.StartLine{
 			Method: Method,
 			Uri:    d.to.Uri,
