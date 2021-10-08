@@ -72,7 +72,7 @@ func (d *Device) CheckSubStream() {
 	d.channelMutex.Lock()
 	defer d.channelMutex.Unlock()
 	for _, c := range d.Channels {
-		if s := engine.FindStream("sub/" + c.DeviceID); s != nil {
+		if s := live_sdk.FindStream("sub/" + c.DeviceID); s != nil {
 			c.LiveSubSP = s.StreamPath
 		} else {
 			c.LiveSubSP = ""
@@ -119,7 +119,7 @@ func (d *Device) UpdateChannels(list []*Channel) {
 				go c.Invite("", "")
 			}
 		}
-		if s := engine.FindStream("sub/" + c.DeviceID); s != nil {
+		if s := live_sdk.FindStream("sub/" + c.DeviceID); s != nil {
 			c.LiveSubSP = s.StreamPath
 		} else {
 			c.LiveSubSP = ""
