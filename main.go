@@ -180,9 +180,10 @@ func run() {
 		live_utils.CORS(w, r)
 		id := r.URL.Query().Get("id")
 		channel := r.URL.Query().Get("channel")
-		live := r.URL.Query().Get("live")
+		//live := r.URL.Query().Get("live")
 		if c := FindChannel(id, channel); c != nil {
-			w.WriteHeader(c.Bye(live != "false"))
+			//w.WriteHeader(c.Bye(live != "false"))
+			w.WriteHeader(c.Bye())
 		} else {
 			w.WriteHeader(404)
 		}
