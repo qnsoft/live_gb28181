@@ -184,11 +184,11 @@ func (channel *Channel) Invite(start, end string) (code int) {
 		"u=" + channel.DeviceID + ":0",
 		"c=IN IP4 " + d.SipIP,
 		fmt.Sprintf("t=%d %d", sint, eint),
-		fmt.Sprintf("m=video %d RTP/AVP 96 97 98", config.MediaPort),
+		fmt.Sprintf("m=video %d RTP/AVP 96 98 97"),
 		"a=recvonly",
 		"a=rtpmap:96 PS/90000",
-		"a=rtpmap:97 MPEG4/90000",
 		"a=rtpmap:98 H264/90000",
+		"a=rtpmap:97 MPEG4/90000",
 		"y=" + string(ssrc),
 	}
 	invite := channel.CreateMessage(sip.INVITE)

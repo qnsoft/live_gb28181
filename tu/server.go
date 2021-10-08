@@ -23,7 +23,7 @@ func NewServer(config *transaction.Config) *Server {
 //运行一个sip server
 func RunServer() {
 	config := &transaction.Config{
-		SipIP:      "192.168.1.102",
+		SipIP:      "192.168.1.21",
 		SipPort:    5060,
 		SipNetwork: "UDP",
 		Serial:     "34020000002000000001",

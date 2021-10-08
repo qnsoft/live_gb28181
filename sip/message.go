@@ -3,12 +3,11 @@ package sip
 import (
 	"errors"
 	"fmt"
+	"github.com/qnsoft/live_gb28181/utils"
 	"strconv"
 	"strings"
-
-	"github.com/qnsoft/live_gb28181/utils"
+	"time"
 )
-
 //Content-Type: Application/MANSCDP+xml
 //Content-Type: Application/SDP
 //Call-ID: 202081530679
@@ -20,26 +19,35 @@ import (
 type Message struct {
 	Mode Mode //0:REQUEST, 1:RESPONSE
 
-	StartLine     *StartLine
-	Via           *Via     //Via
-	From          *Contact //From
-	To            *Contact //To
-	CallID        string   //Call-ID
-	CSeq          *CSeq    //CSeq
-	Contact       *Contact //Contact
-	Authorization string   //Authorization
-	MaxForwards   int      //Max-Forwards
-	UserAgent     string   //User-Agent
-	Subject       string   //Subject
-	ContentType   string   //Content-Type
-	Expires       int      //Expires
-	ContentLength int      //Content-Length
-	Route         *Contact
-	Body          string
-	Addr          string
+	StartLine       *StartLine
+	Via             *Via           //Via
+	From            *Contact       //From
+	To              *Contact       //To
+	CallID          string         //Call-ID
+	CSeq            *CSeq          //CSeq
+	Contact         *Contact       //Contact
+	Authorization   *Authorization //Authorization
+	MaxForwards     int            //Max-Forwards
+	UserAgent       string         //User-Agent
+	Subject         string         //Subject
+	ContentType     string         //Content-Type
+	Expires         int            //Expires
+	ContentLength   int            //Content-Length
+	Route           *Contact
+	Body            string
+	Addr            string
+	Event           string
+	Date						time.Time
+	WwwAuthenticate *WwwAuthenticate //gb28181 密码验证 上级发给下级是WwwAuthenticate；下级发给上级是Authorization
 }
 
 func (m *Message) BuildResponse(code int) *Message {
+	return m.BuildResponseWithPhrase(code, "")
+}
+func (m *Message) BuildOK() *Message {
+	return m.BuildResponseWithPhrase(200, "OK")
+}
+func (m *Message) BuildResponseWithPhrase(code int, phrase string) *Message {
 	response := Message{
 		Mode:        SIP_MESSAGE_RESPONSE,
 		From:        m.From,
@@ -48,9 +56,12 @@ func (m *Message) BuildResponse(code int) *Message {
 		CSeq:        m.CSeq,
 		Via:         m.Via,
 		MaxForwards: m.MaxForwards,
+		UserAgent: "Monibuca",
 		StartLine: &StartLine{
-			Code: code,
+			Code:   code,
+			phrase: phrase,
 		},
+		Date: time.Now(),
 	}
 	return &response
 }
@@ -156,7 +167,7 @@ func (m *Message) GetBranch() string {
 
 	b, ok := m.Via.Params["branch"]
 	if !ok {
-		panic("invalid via paramas branch")
+		return ""
 	}
 
 	return b
@@ -286,7 +297,7 @@ func Decode(data []byte) (msg *Message, err error) {
 		if len(v) == 0 {
 			continue
 		}
-		//fmt.Println("这个k到底是什么？", k)
+
 		switch k {
 		case "via":
 			//Via: SIP/2.0/UDP 192.168.1.64:5060;rport;branch=z9hG4bK385701375
@@ -356,13 +367,19 @@ func Decode(data []byte) (msg *Message, err error) {
 			msg.ContentLength = int(n)
 
 		case "authorization":
-			msg.Authorization = v
+			msg.Authorization = &Authorization{}
+			msg.Authorization.Parse(v)
 
 		case "content-type":
 			msg.ContentType = v
 		case "route":
 			//msg.Route = new(Contact)
 			//msg.Route.Parse(v)
+		case "www-authenticate":
+			msg.WwwAuthenticate = &WwwAuthenticate{}
+			msg.WwwAuthenticate.Parse(v)
+		case "event":
+			msg.Event = v
 		default:
 			fmt.Printf("invalid sip head: %s,%s\n", k, v)
 		}
@@ -434,6 +451,21 @@ func Encode(msg *Message) ([]byte, error) {
 		sb.WriteString(CRLF)
 	}
 
+	if msg.WwwAuthenticate != nil {
+		sb.WriteString("WWW-Authenticate: ")
+		sb.WriteString(msg.WwwAuthenticate.String())
+		sb.WriteString(CRLF)
+	}
+	if !msg.Date.IsZero() {
+		sb.WriteString("Date: ")
+		sb.WriteString(msg.Date.Format("2006-01-02T15:04:05.999"))
+		sb.WriteString(CRLF)
+	}
+	if msg.Event != "" {
+		sb.WriteString("Event: ")
+		sb.WriteString(msg.Event)
+		sb.WriteString(CRLF)
+	}
 	if msg.IsRequest() {
 		//request only
 
@@ -441,9 +473,9 @@ func Encode(msg *Message) ([]byte, error) {
 		sb.WriteString(strconv.Itoa(msg.MaxForwards))
 		sb.WriteString(CRLF)
 
-		if msg.Authorization != "" {
+		if msg.Authorization != nil {
 			sb.WriteString("Authorization: ")
-			sb.WriteString(msg.Authorization)
+			sb.WriteString(msg.Authorization.String())
 			sb.WriteString(CRLF)
 		}
 	} else {

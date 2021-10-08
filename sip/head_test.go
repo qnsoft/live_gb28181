@@ -84,7 +84,6 @@ Contact: <sip:34020000001320000001@192.168.1.64:5060>
 Content-Type: application/sdp
 User-Agent: IP Camera
 Content-Length:   185
-
 v=0
 o=34020000001320000001 1835 1835 IN IP4 192.168.1.64
 s=Play
@@ -111,4 +110,61 @@ y=0009093131`
 	fmt.Println("=====================================")
 	fmt.Println("output:")
 	fmt.Println(string(out))
+}
+
+func TestAuthorization_Verify(t *testing.T) {
+	type fields struct {
+		username  string
+		realm     string
+		nonce     string
+		uri       string
+		response  string
+		algorithm string
+	}
+	type args struct {
+		username string
+		passwd   string
+		realm    string
+		nonce    string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   bool
+	}{
+		{
+			name:   "test1",
+			fields: fields{
+				username:  "34020000001320000001",
+				realm:     "3402000000",
+				nonce:     "1628819207",
+				uri:       "sip:34020000002000000001@172.165.0.10:15060",
+				response:  "fa2b30e05ea42dd0ab69ef05d3a06096",
+				algorithm: "MD5",
+			},
+			args:   args{
+				username: "34020000001320000001",
+				passwd:   "12345678",
+				realm:    "3402000000",
+				nonce:    "1628819207",
+			},
+			want:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &Authorization{
+				username:  tt.fields.username,
+				realm:     tt.fields.realm,
+				nonce:     tt.fields.nonce,
+				uri:       tt.fields.uri,
+				response:  tt.fields.response,
+				algorithm: tt.fields.algorithm,
+			}
+			if got := a.Verify(tt.args.username, tt.args.passwd, tt.args.realm, tt.args.nonce); got != tt.want {
+				t.Errorf("Verify() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

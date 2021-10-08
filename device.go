@@ -12,6 +12,7 @@ import (
 	"github.com/qnsoft/live_sdk"
 )
 
+
 const TIME_LAYOUT = "2006-01-02T15:04:05"
 
 // Record 录像
@@ -38,7 +39,6 @@ type Device struct {
 	UpdateTime        time.Time
 	Status            string
 	Channels          []*Channel
-	queryChannel      bool
 	sn                int
 	from              *sip.Contact
 	to                *sip.Contact
@@ -46,6 +46,11 @@ type Device struct {
 	SipIP             string //暴露的IP
 	channelMap        map[string]*Channel
 	channelMutex      sync.RWMutex
+	subscriber        struct {
+		CallID  string
+		Timeout time.Time
+	}
+	qTimer *time.Timer
 }
 
 func (d *Device) addChannel(channel *Channel) {
@@ -63,13 +68,20 @@ func (d *Device) UpdateChannelsDevice() {
 		c.device = d
 	}
 }
+func (d *Device) CheckSubStream() {
+	d.channelMutex.Lock()
+	defer d.channelMutex.Unlock()
+	for _, c := range d.Channels {
+		if s := engine.FindStream("sub/" + c.DeviceID); s != nil {
+			c.LiveSubSP = s.StreamPath
+		} else {
+			c.LiveSubSP = ""
+		}
+	}
+}
 func (d *Device) UpdateChannels(list []*Channel) {
 	d.channelMutex.Lock()
 	defer d.channelMutex.Unlock()
-	if d.queryChannel {
-		d.Channels = nil
-		d.queryChannel = false
-	}
 	for _, c := range list {
 		if _, ok := Ignores[c.DeviceID]; ok {
 			continue
@@ -103,8 +115,11 @@ func (d *Device) UpdateChannels(list []*Channel) {
 			c.ChannelEx = &ChannelEx{
 				device: d,
 			}
+			if config.AutoInvite {
+				go c.Invite("", "")
+			}
 		}
-		if s := live_sdk.FindStream("sub/" + c.DeviceID); s != nil {
+		if s := engine.FindStream("sub/" + c.DeviceID); s != nil {
 			c.LiveSubSP = s.StreamPath
 		} else {
 			c.LiveSubSP = ""
@@ -125,7 +140,7 @@ func (d *Device) CreateMessage(Method sip.Method) (requestMsg *sip.Message) {
 	requestMsg = &sip.Message{
 		Mode:        sip.SIP_MESSAGE_REQUEST,
 		MaxForwards: 70,
-		UserAgent:   "LiveSdk",
+		UserAgent:   "Monibuca",
 		StartLine: &sip.StartLine{
 			Method: Method,
 			Uri:    d.to.Uri,
@@ -146,11 +161,34 @@ func (d *Device) CreateMessage(Method sip.Method) (requestMsg *sip.Message) {
 	}
 	return
 }
-func (d *Device) Query() int {
-	d.queryChannel = true
+func (d *Device) Subscribe() int {
+	requestMsg := d.CreateMessage(sip.SUBSCRIBE)
+	if d.subscriber.CallID != "" {
+		requestMsg.CallID = d.subscriber.CallID
+	}
+	requestMsg.Expires = 3600
+	requestMsg.Event = "Catalog"
+	d.subscriber.Timeout = time.Now().Add(time.Second * time.Duration(requestMsg.Expires))
+	requestMsg.ContentType = "Application/MANSCDP+xml"
+	requestMsg.Body = fmt.Sprintf(`<?xml version="1.0" encoding="gb2312"?>
+<Query>
+<CmdType>Catalog</CmdType>
+<SN>%d</SN>
+<DeviceID>%s</DeviceID>
+</Query>`, d.sn, requestMsg.To.Uri.UserInfo())
+	requestMsg.ContentLength = len(requestMsg.Body)
+	response := d.SendMessage(requestMsg)
+	if response.Code == 200 {
+		d.subscriber.CallID = requestMsg.CallID
+	} else {
+		d.subscriber.CallID = ""
+	}
+	return response.Code
+}
+func (d *Device) Query() {
 	requestMsg := d.CreateMessage(sip.MESSAGE)
 	requestMsg.ContentType = "Application/MANSCDP+xml"
-	requestMsg.Body = fmt.Sprintf(`<?xml version="1.0"?>
+	requestMsg.Body = fmt.Sprintf(`<?xml version="1.0" encoding="gb2312"?>
 <Query>
 <CmdType>Catalog</CmdType>
 <SN>%d</SN>
@@ -161,5 +199,10 @@ func (d *Device) Query() int {
 	if response.Data != nil && response.Data.Via.Params["received"] != "" {
 		d.SipIP = response.Data.Via.Params["received"]
 	}
-	return response.Code
+	if response.Code != 200 {
+		fmt.Printf("device %s send Catalog : %d\n", d.ID, response.Code)
+		d.qTimer = time.AfterFunc(time.Second*5, d.Query)
+	} else {
+		d.Subscribe()
+	}
 }

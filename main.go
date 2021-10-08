@@ -10,21 +10,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/logrusorgru/aurora"
 	"github.com/pion/rtp"
 	"github.com/qnsoft/live_gb28181/sip"
 	"github.com/qnsoft/live_gb28181/transaction"
 	"github.com/qnsoft/live_gb28181/utils"
-	"github.com/qnsoft/live_sdk"
-	"github.com/qnsoft/live_utils"
 	"golang.org/x/net/html/charset"
 )
-
 var (
-	Devices    sync.Map
-	Ignores    = make(map[string]struct{})
-	publishers Publishers
+	Devices             sync.Map
+	DeviceNonce         = make(map[string]string) //保存nonce防止设备伪造
+	DeviceRegisterCount = make(map[string]int)    //设备注册次数
+	Ignores             = make(map[string]struct{})
+	publishers          Publishers
 )
+
+const MaxRegisterCount = 3
 
 func FindChannel(deviceId string, channelId string) (c *Channel) {
 	if v, ok := Devices.Load(deviceId); ok {
@@ -58,21 +58,24 @@ func (p *Publishers) Get(key uint32) *Publisher {
 }
 
 var config = struct {
-	Serial          string
-	Realm           string
-	ListenAddr      string
-	Expires         int
-	MediaPort       uint16
-	AutoInvite      bool
-	AutoUnPublish   bool
-	Ignore          []string
-	CatalogInterval int
-	PreFetchRecord  bool
-}{"34020000002000000001", "3402000000", "127.0.0.1:5060", 3600, 58200, false, true, nil, 30, false}
+	Serial            string
+	Realm             string
+	ListenAddr        string
+	Expires           int
+	MediaPort         uint16
+	AutoInvite        bool
+	AutoUnPublish     bool
+	Ignore            []string
+	CatalogInterval   int
+	RemoveBanInterval int
+	PreFetchRecord    bool
+	Username          string
+	Password          string
+}{"34020000002000000001", "3402000000", "127.0.0.1:5060", 3600, 58200, false, true, nil, 30, 600, false, "", ""}
 
 func init() {
-	live_sdk.InstallPlugin(&live_sdk.PluginConfig{
-		Name:   "LiveGB28181",
+	engine.InstallPlugin(&engine.PluginConfig{
+		Name:   "GB28181",
 		Config: &config,
 		Run:    run,
 	})
@@ -84,7 +87,7 @@ func run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	live_utils.Print(aurora.Green("server LiveGB28181 start at"), aurora.BrightBlue(config.ListenAddr))
+	Print(Green("server gb28181 start at"), BrightBlue(config.ListenAddr))
 	for _, id := range config.Ignore {
 		Ignores[id] = struct{}{}
 	}
@@ -94,6 +97,8 @@ func run() {
 		SipNetwork:        "UDP",
 		Serial:            config.Serial,
 		Realm:             config.Realm,
+		Username:          config.Username,
+		Password:          config.Password,
 		AckTimeout:        10,
 		MediaIP:           ipAddr.IP.String(),
 		RegisterValidity:  config.Expires,
@@ -104,9 +109,10 @@ func run() {
 		WaitKeyFrame:      true,
 		MediaIdleTimeout:  30,
 		CatalogInterval:   config.CatalogInterval,
+		RemoveBanInterval: config.RemoveBanInterval,
 	}
 	http.HandleFunc("/api/gb28181/query/records", func(w http.ResponseWriter, r *http.Request) {
-		live_utils.CORS(w, r)
+		CORS(w, r)
 		id := r.URL.Query().Get("id")
 		channel := r.URL.Query().Get("channel")
 		startTime := r.URL.Query().Get("startTime")
@@ -118,8 +124,8 @@ func run() {
 		}
 	})
 	http.HandleFunc("/api/gb28181/list", func(w http.ResponseWriter, r *http.Request) {
-		live_utils.CORS(w, r)
-		sse := live_utils.NewSSE(w, r.Context())
+		CORS(w, r)
+		sse := NewSSE(w, r.Context())
 		for {
 			var list []*Device
 			Devices.Range(func(key, value interface{}) bool {
@@ -140,7 +146,7 @@ func run() {
 		}
 	})
 	http.HandleFunc("/api/gb28181/control", func(w http.ResponseWriter, r *http.Request) {
-		live_utils.CORS(w, r)
+		CORS(w, r)
 		id := r.URL.Query().Get("id")
 		channel := r.URL.Query().Get("channel")
 		ptzcmd := r.URL.Query().Get("ptzcmd")
@@ -151,7 +157,7 @@ func run() {
 		}
 	})
 	http.HandleFunc("/api/gb28181/invite", func(w http.ResponseWriter, r *http.Request) {
-		live_utils.CORS(w, r)
+		CORS(w, r)
 		query := r.URL.Query()
 		id := query.Get("id")
 		channel := r.URL.Query().Get("channel")
@@ -168,11 +174,12 @@ func run() {
 		}
 	})
 	http.HandleFunc("/api/gb28181/bye", func(w http.ResponseWriter, r *http.Request) {
-		live_utils.CORS(w, r)
+		CORS(w, r)
 		id := r.URL.Query().Get("id")
 		channel := r.URL.Query().Get("channel")
+		live := r.URL.Query().Get("live")
 		if c := FindChannel(id, channel); c != nil {
-			w.WriteHeader(c.Bye())
+			w.WriteHeader(c.Bye(live != "false"))
 		} else {
 			w.WriteHeader(404)
 		}
@@ -192,21 +199,52 @@ func run() {
 			SipIP:        config.MediaIP,
 			channelMap:   make(map[string]*Channel),
 		}
-		if old, ok := Devices.Load(id); !ok {
-			go d.Query()
-		} else {
-			oldD := old.(*Device)
-			d.RegisterTime = oldD.RegisterTime
-			d.channelMap = oldD.channelMap
-			d.Status = oldD.Status
+		// 不需要密码情况
+		if config.Username == "" && config.Password == "" {
+			onRegister(s, config, d)
+			return
 		}
-		Devices.Store(id, d)
+		// 有些摄像头没有配置用户名的地方，用户名就是摄像头自己的国标id
+		username := config.Username
+		if msg.Authorization.GetUsername() == id {
+			username = id
+		}
+		sendUnauthorized := func() {
+			response := msg.BuildResponseWithPhrase(401, "Unauthorized")
+			if DeviceNonce[d.ID] == "" {
+				nonce := utils.RandNumString(32)
+				DeviceNonce[d.ID] = nonce
+			}
+			response.WwwAuthenticate = sip.NewWwwAuthenticate(s.Realm, DeviceNonce[d.ID], sip.DIGEST_ALGO_MD5)
+			s.Send(response)
+		}
+		if DeviceRegisterCount[d.ID] >= MaxRegisterCount {
+			s.Send(msg.BuildResponse(403))
+			return
+		}
+		// 需要密码情况 设备第一次上报，返回401和加密算法
+		if msg.Authorization == nil || msg.Authorization.GetUsername() == "" {
+			sendUnauthorized()
+			return
+		}
+		// 设备第二次上报，校验
+		if !msg.Authorization.Verify(username, config.Password, config.Realm, DeviceNonce[d.ID]) {
+			sendUnauthorized()
+			DeviceRegisterCount[d.ID] += 1
+			return
+		}
+		onRegister(s, config, d)
+		delete(DeviceNonce, d.ID)
+		delete(DeviceRegisterCount, d.ID)
 	}
 	s.OnMessage = func(msg *sip.Message) bool {
 		if v, ok := Devices.Load(msg.From.Uri.UserInfo()); ok {
 			d := v.(*Device)
 			if d.Status == string(sip.REGISTER) {
 				d.Status = "ONLINE"
+				if d.qTimer == nil {
+					d.qTimer = time.AfterFunc(time.Second*5, d.Query)
+				}
 			}
 			d.UpdateTime = time.Now()
 			temp := &struct {
@@ -221,12 +259,20 @@ func run() {
 			err := decoder.Decode(temp)
 			if err != nil {
 				err = utils.DecodeGbk(temp, []byte(msg.Body))
-				log.Printf("decode catelog err: %s", err)
+				if err != nil {
+					log.Printf("decode catelog err: %s", err)
+				}
 			}
 			switch temp.XMLName.Local {
 			case "Notify":
-				if d.Channels == nil {
-					go d.Query()
+				switch temp.CmdType {
+				case "Keeyalive":
+					if d.subscriber.CallID != "" && time.Now().After(d.subscriber.Timeout) {
+						go d.Subscribe()
+					}
+					d.CheckSubStream()
+				case "Catalog":
+					d.UpdateChannels(temp.DeviceList)
 				}
 			case "Response":
 				switch temp.CmdType {
@@ -251,7 +297,10 @@ func run() {
 	//	})
 	//})
 	go listenMedia()
-	go queryCatalog(config)
+	// go queryCatalog(config)
+	if config.Username != "" || config.Password != "" {
+		go removeBanDevice(config)
+	}
 	s.Start()
 }
 func listenMedia() {
@@ -266,18 +315,18 @@ func listenMedia() {
 		log.Fatalf("udp server ListenUDP MediaPort:%d error, %v", config.MediaPort, err)
 	}
 	if err = conn.SetReadBuffer(networkBuffer); err != nil {
-		live_utils.Printf("udp server video conn set read buffer error, %v", err)
+		Printf("udp server video conn set read buffer error, %v", err)
 	}
 	if err = conn.SetWriteBuffer(networkBuffer); err != nil {
-		live_utils.Printf("udp server video conn set write buffer error, %v", err)
+		Printf("udp server video conn set write buffer error, %v", err)
 	}
 	bufUDP := make([]byte, 1048576)
-	live_utils.Printf("udp server start listen video port[%d]", config.MediaPort)
-	defer live_utils.Printf("udp server stop listen video port[%d]", config.MediaPort)
+	Printf("udp server start listen video port[%d]", config.MediaPort)
+	defer Printf("udp server stop listen video port[%d]", config.MediaPort)
 	for n, _, err := conn.ReadFromUDP(bufUDP); err == nil; n, _, err = conn.ReadFromUDP(bufUDP) {
 		ps := bufUDP[:n]
 		if err := rtpPacket.Unmarshal(ps); err != nil {
-			live_utils.Println("gb28181 decode rtp error:", err)
+			Println("gb28181 decode rtp error:", err)
 		}
 		if publisher := publishers.Get(rtpPacket.SSRC); publisher != nil && publisher.Err() == nil {
 			publisher.PushPS(&rtpPacket)
@@ -285,17 +334,44 @@ func listenMedia() {
 	}
 }
 
-func queryCatalog(config *transaction.Config) {
-	t := time.NewTicker(time.Duration(config.CatalogInterval) * time.Second)
+// func queryCatalog(config *transaction.Config) {
+// 	t := time.NewTicker(time.Duration(config.CatalogInterval) * time.Second)
+// 	for range t.C {
+// 		Devices.Range(func(key, value interface{}) bool {
+// 			device := value.(*Device)
+// 			if time.Since(device.UpdateTime) > time.Duration(config.RegisterValidity)*time.Second {
+// 				Devices.Delete(key)
+// 			} else if device.Channels != nil {
+// 				go device.Subscribe()
+// 			}
+// 			return true
+// 		})
+// 	}
+// }
+
+func onRegister(s *transaction.Core, config *transaction.Config, d *Device) {
+	if old, ok := Devices.Load(d.ID); ok {
+		oldD := old.(*Device)
+		if oldD.qTimer != nil {
+			oldD.qTimer.Stop()
+			d.qTimer = time.AfterFunc(time.Second*5, d.Query)
+		}
+		d.RegisterTime = oldD.RegisterTime
+		d.channelMap = oldD.channelMap
+		d.Channels = oldD.Channels
+		d.UpdateChannelsDevice()
+		d.Status = oldD.Status
+	}
+	Devices.Store(d.ID, d)
+}
+
+func removeBanDevice(config *transaction.Config) {
+	t := time.NewTicker(time.Duration(config.RemoveBanInterval) * time.Second)
 	for range t.C {
-		Devices.Range(func(key, value interface{}) bool {
-			device := value.(*Device)
-			if time.Since(device.UpdateTime) > time.Duration(config.RegisterValidity)*time.Second {
-				Devices.Delete(key)
-			} else {
-				go device.Query()
+		for id, cnt := range DeviceRegisterCount {
+			if cnt >= MaxRegisterCount {
+				delete(DeviceRegisterCount, id)
 			}
-			return true
-		})
+		}
 	}
 }

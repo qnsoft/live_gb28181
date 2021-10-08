@@ -10,7 +10,6 @@ import (
 	"github.com/qnsoft/live_gb28181/sip"
 	"github.com/qnsoft/live_gb28181/transport"
 )
-
 //Core: transactions manager
 //管理所有 transactions，以及相关全局参数、运行状态机
 type Core struct {
@@ -294,14 +293,14 @@ func (c *Core) HandleReceiveMessage(p *transport.Packet) (err error) {
 			//TODO:this should be a ACK for 2xx (but could be a late ACK!)
 			return
 		case sip.BYE:
-			c.Send(msg.BuildResponse(200))
+			c.Send(msg.BuildOK())
 			return
 		case sip.MESSAGE:
 			if c.OnMessage(msg) && ta == nil {
-				c.Send(msg.BuildResponse(200))
+				c.Send(msg.BuildOK())
 			}
 			if ta != nil {
-				m := msg.BuildResponse(200)
+				m := msg.BuildOK()
 				ta.Run(getOutGoingMessageEvent(m), m)
 			}
 		case sip.REGISTER:
@@ -311,9 +310,11 @@ func (c *Core) HandleReceiveMessage(p *transport.Packet) (err error) {
 				ta.state = NIST_PROCEEDING
 				c.AddTransaction(ta)
 			}
-			c.OnRegister(msg)
-			m := msg.BuildResponse(200)
+			m := msg.BuildOK()
+			m.Contact = msg.Contact
+			m.Expires = msg.Expires
 			ta.Run(getOutGoingMessageEvent(m), m)
+			c.OnRegister(msg)
 		//case sip.INVITE:
 		//	ta.typo = FSM_IST
 		//	ta.state = IST_PRE_PROCEEDING
