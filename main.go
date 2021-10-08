@@ -3,6 +3,9 @@ package live_gb28181
 import (
 	"bytes"
 	"encoding/xml"
+	"github.com/logrusorgru/aurora"
+	"github.com/qnsoft/live_sdk"
+	"github.com/qnsoft/live_utils"
 	"log"
 	"net"
 	"net/http"
@@ -74,7 +77,7 @@ var config = struct {
 }{"34020000002000000001", "3402000000", "127.0.0.1:5060", 3600, 58200, false, true, nil, 30, 600, false, "", ""}
 
 func init() {
-	engine.InstallPlugin(&engine.PluginConfig{
+	live_sdk.InstallPlugin(&live_sdk.PluginConfig{
 		Name:   "GB28181",
 		Config: &config,
 		Run:    run,
@@ -87,7 +90,7 @@ func run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	Print(Green("server gb28181 start at"), BrightBlue(config.ListenAddr))
+	live_utils.Print(aurora.Green("server gb28181 start at"), aurora.BrightBlue(config.ListenAddr))
 	for _, id := range config.Ignore {
 		Ignores[id] = struct{}{}
 	}
@@ -112,7 +115,7 @@ func run() {
 		RemoveBanInterval: config.RemoveBanInterval,
 	}
 	http.HandleFunc("/api/gb28181/query/records", func(w http.ResponseWriter, r *http.Request) {
-		CORS(w, r)
+		live_utils.CORS(w, r)
 		id := r.URL.Query().Get("id")
 		channel := r.URL.Query().Get("channel")
 		startTime := r.URL.Query().Get("startTime")
@@ -124,8 +127,8 @@ func run() {
 		}
 	})
 	http.HandleFunc("/api/gb28181/list", func(w http.ResponseWriter, r *http.Request) {
-		CORS(w, r)
-		sse := NewSSE(w, r.Context())
+		live_utils.CORS(w, r)
+		sse := live_utils.NewSSE(w, r.Context())
 		for {
 			var list []*Device
 			Devices.Range(func(key, value interface{}) bool {
@@ -146,7 +149,7 @@ func run() {
 		}
 	})
 	http.HandleFunc("/api/gb28181/control", func(w http.ResponseWriter, r *http.Request) {
-		CORS(w, r)
+		live_utils.CORS(w, r)
 		id := r.URL.Query().Get("id")
 		channel := r.URL.Query().Get("channel")
 		ptzcmd := r.URL.Query().Get("ptzcmd")
@@ -157,7 +160,7 @@ func run() {
 		}
 	})
 	http.HandleFunc("/api/gb28181/invite", func(w http.ResponseWriter, r *http.Request) {
-		CORS(w, r)
+		live_utils.CORS(w, r)
 		query := r.URL.Query()
 		id := query.Get("id")
 		channel := r.URL.Query().Get("channel")
@@ -174,7 +177,7 @@ func run() {
 		}
 	})
 	http.HandleFunc("/api/gb28181/bye", func(w http.ResponseWriter, r *http.Request) {
-		CORS(w, r)
+		live_utils.CORS(w, r)
 		id := r.URL.Query().Get("id")
 		channel := r.URL.Query().Get("channel")
 		live := r.URL.Query().Get("live")
@@ -315,18 +318,18 @@ func listenMedia() {
 		log.Fatalf("udp server ListenUDP MediaPort:%d error, %v", config.MediaPort, err)
 	}
 	if err = conn.SetReadBuffer(networkBuffer); err != nil {
-		Printf("udp server video conn set read buffer error, %v", err)
+		live_utils.Printf("udp server video conn set read buffer error, %v", err)
 	}
 	if err = conn.SetWriteBuffer(networkBuffer); err != nil {
-		Printf("udp server video conn set write buffer error, %v", err)
+		live_utils.Printf("udp server video conn set write buffer error, %v", err)
 	}
 	bufUDP := make([]byte, 1048576)
-	Printf("udp server start listen video port[%d]", config.MediaPort)
-	defer Printf("udp server stop listen video port[%d]", config.MediaPort)
+	live_utils.Printf("udp server start listen video port[%d]", config.MediaPort)
+	defer live_utils.Printf("udp server stop listen video port[%d]", config.MediaPort)
 	for n, _, err := conn.ReadFromUDP(bufUDP); err == nil; n, _, err = conn.ReadFromUDP(bufUDP) {
 		ps := bufUDP[:n]
 		if err := rtpPacket.Unmarshal(ps); err != nil {
-			Println("gb28181 decode rtp error:", err)
+			live_utils.Println("gb28181 decode rtp error:", err)
 		}
 		if publisher := publishers.Get(rtpPacket.SSRC); publisher != nil && publisher.Err() == nil {
 			publisher.PushPS(&rtpPacket)
