@@ -78,7 +78,7 @@ var config = struct {
 
 func init() {
 	live_sdk.InstallPlugin(&live_sdk.PluginConfig{
-		Name:   "GB28181",
+		Name:   "LiveGB28181",
 		Config: &config,
 		Run:    run,
 	})
